@@ -1,17 +1,28 @@
 {
     "name": "starizzi-shop-bot",
-    "version": "1.0.0",
+    "version": "2.0.0",
     "description": "Telegram Shop Bot - Starizzi Shop",
     "main": "src/bot.js",
+    "engines": {
+        "node": ">=18.17"
+    },
     "scripts": {
         "start": "node src/bot.js",
-        "dev": "node --watch src/bot.js"
+        "dev": "node --watch src/bot.js",
+        "test": "node --test test/*.test.js",
+        "lint": "eslint .",
+        "check": "npm run lint && npm test"
     },
     "dependencies": {
-        "telegraf": "^4.16.3",
         "better-sqlite3": "^11.7.0",
         "dotenv": "^16.4.7",
         "express": "^4.21.1",
-        "nanoid": "^3.3.8"
+        "nanoid": "^3.3.8",
+        "telegraf": "^4.16.3"
+    },
+    "devDependencies": {
+        "@eslint/js": "^9.39.5",
+        "eslint": "^9.39.5",
+        "globals": "^15.15.0"
     }
 }

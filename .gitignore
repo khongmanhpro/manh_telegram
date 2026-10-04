@@ -8,6 +8,7 @@ node_modules/
 data/*.db
 data/*.db-shm
 data/*.db-wal
+data/backups/
 
 # OS files
 .DS_Store
@@ -20,3 +21,6 @@ Thumbs.db
 # Logs
 *.log
 npm-debug.log*
+
+# Design mockup bundle (10MB, not part of the app)
+Telegram Shop Bot — Quản trị.html

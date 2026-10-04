@@ -33,33 +33,38 @@
 
 | Feature | Description |
 |---------|-------------|
-| 🛒 **Automated selling** | Customer selects product → pays → receives account automatically |
-| 💳 **VietQR Payment** | Instant QR code generation, supports 40+ Vietnamese banks |
-| 🏦 **Multi-bank** | Lets customers choose between 2 payment banks |
-| 📦 **Stock management** | Add/view/clear inventory, auto-deliver accounts on confirmation |
-| 📊 **Google Sheet Sync** | Auto-sync products from Google Sheet (every 5 minutes) |
-| 🔧 **Admin Panel** | Manage orders, products, view revenue statistics |
-| 📢 **Broadcast** | Send announcements to all customers |
-| 🔄 **Manual delivery** | Admin provides account details for out-of-stock products |
+| 🤖 **Fully automatic delivery** | [SePay](https://sepay.vn) webhook: money arrives → accounts delivered within seconds |
+| 💳 **VietQR payments** | Instant QR codes for 40+ Vietnamese banks, customer can choose between 2 banks |
+| 👛 **Wallet balance** | Auto top-up, instant purchases from balance; over/late payments are credited to the wallet |
+| 🧾 **Order history** | `/donhang` — customers can re-open purchased accounts at any time |
+| 🛠 **Warranty** | Customers report issues per order, admins replace accounts from stock in one tap |
+| 🎁 **Promotions** | Coupons (%, fixed amount, usage limit, expiry) and "Buy X get Y free" |
+| 📦 **Stock management** | Import via message or `.txt` file, de-duplication, stock reserved for pending orders, low-stock alerts |
+| ⏰ **Order expiry** | Unpaid orders auto-cancel after 15 minutes and old QR codes are removed |
+| 🔧 **Pro admin tools** | Multiple admins, 7/30-day stats, top products, CSV export, look up who bought an account |
+| 📊 **Google Sheet Sync** | Syncs products & categories every 5 minutes, deactivates products removed from the sheet |
+| 📢 **Broadcast** | Send text/photos/videos to all customers with Telegram-safe rate limiting |
+| 💾 **Safe operations** | Daily DB backup sent to admin, daily report, error alerts, Docker & PM2 |
 
 ## 🔄 Purchase Flow
 
 ```
-Customer: /product → Select Item → Choose Qty → Choose Bank
-                          ↓
-                Bot generates VietQR → Customer scans & pays
-                          ↓
-              Admin clicks ✅ Confirm (or /confirm)
-                          ↓
-             Bot auto-delivers account to customer ✅
+Customer: /product → Category → Product → Quantity → (Coupon) → Payment
+                                   ↓
+          ┌────────────────────────┴────────────────────────┐
+     👛 Balance: instant delivery            🏦 VietQR: customer transfers money
+                                                         ↓
+                                  SePay webhook (or admin taps ✅ Confirm)
+                                                         ↓
+                 In stock → bot sends accounts ✅  ·  Out of stock → admin delivers manually 📝
 ```
 
 ## ⚡ Quick Start
 
 ### Requirements
-- [Node.js](https://nodejs.org/) v18 or higher
+- [Node.js](https://nodejs.org/) v18.17+ (or Docker)
 - Telegram Bot Token (from [@BotFather](https://t.me/BotFather))
-- Vietnamese bank account (supports [VietQR](https://vietqr.io/))
+- A bank account supported by [VietQR](https://vietqr.io/)
 
 ### 1️⃣ Clone & install
 
@@ -69,60 +74,72 @@ cd telegram-shop-bot
 npm install
 ```
 
-### 2️⃣ Create Telegram Bot
-
-1. Open Telegram → search [@BotFather](https://t.me/BotFather) → send `/newbot`
-2. Set bot name → receive **Bot Token**
-3. Send `/myid` to [@userinfobot](https://t.me/userinfobot) → get your **Telegram ID**
-
-### 3️⃣ Configure
+### 2️⃣ Configure
 
 ```bash
 cp .env.example .env
 ```
 
-Edit `.env` with your info:
+Minimum settings:
 
 ```env
-# Token from @BotFather
-BOT_TOKEN=1234567890:ABCdefGhIjKlMnOpQrS
-
-# Your Telegram ID (admin)
-ADMIN_ID=123456789
-
-# Bank info (lookup BIN codes: https://www.vietqr.io/danh-sach-ngan-hang)
-BANK_BIN=970422
+BOT_TOKEN=1234567890:ABCdefGhIjKlMnOpQrS     # from @BotFather
+ADMIN_IDS=123456789                          # several admins: 111,222
+BANK_BIN=970422                              # BIN list: vietqr.io/danh-sach-ngan-hang
 BANK_ACCOUNT=1234567890
 BANK_ACCOUNT_NAME=NGUYEN VAN A
 BANK_NAME=MB
-
-# Shop info
 SHOP_NAME=My Shop
 SUPPORT_CONTACT=@your_username
 ```
 
-### 4️⃣ Run the bot
+> 💡 Don't know your Telegram ID? Start the bot, send `/myid`, put it in `ADMIN_IDS` and restart.
+> See [.env.example](.env.example) for all options.
+
+### 3️⃣ Run
 
 ```bash
-npm start
+npm start            # normal
+npm run dev          # auto-restart on changes
 ```
 
-> 💡 Dev mode (auto-restart on file changes): `npm run dev`
+**Production (pick one):**
+
+```bash
+docker compose up -d --build                  # Docker (DB stored in ./data)
+pm2 start ecosystem.config.js && pm2 save     # PM2
+```
+
+## 🤖 Automatic Payments (SePay)
+
+1. Sign up at [sepay.vn](https://sepay.vn) and link the receiving bank account.
+2. Expose `WEBHOOK_PORT` over HTTPS (Nginx, Caddy or Cloudflare Tunnel).
+3. In SePay, create a **Webhook**:
+   - URL: `https://<domain>/webhook/sepay`
+   - Authentication: **API Key** — use the same value for `SEPAY_API_KEY` in `.env`.
+4. Restart the bot. Each transaction is processed **exactly once** (de-duplicated by transaction ID):
+   - Full amount → delivered immediately; overpayment → excess credited to balance.
+   - Underpayment → bot asks for the remainder; transferring it with the same content completes the order.
+   - Expired/cancelled order → the whole amount goes to balance (customers never lose money).
+   - Content matching no order → admins are alerted.
+
+> Without SePay the bot still works: admins tap **✅ Confirm** on the new-order notification (or `/confirm ID`).
 
 ## 📋 Commands
 
 <details>
-<summary><b>👤 Customer Commands</b></summary>
+<summary><b>👤 User Commands</b></summary>
 
 | Command | Description |
 |---------|-------------|
-| `/start` | 🔄 Start / Restart bot |
-| `/menu` | 👤 Account info |
-| `/product` | 📦 Product listing |
-| `/nap [amount]` | 💰 Top up balance |
-| `/checkpay` | 🔍 Check payment status |
-| `/support` | 🆘 Get support |
-| `/myid` | 🆔 Get your Telegram ID |
+| `/start` | 🔄 Start + quick menu |
+| `/product` | 📦 Product list |
+| `/donhang` | 🧾 My orders, re-view accounts, warranty |
+| `/nap [amount]` | 💰 Top up balance (e.g. `/nap 50k`) |
+| `/menu` | 👤 Account info & balance |
+| `/support` | 🆘 Support |
+| `/myid` | 🆔 Get Telegram ID |
+| `/cancel` | ❌ Cancel current input |
 
 </details>
 
@@ -133,29 +150,43 @@ npm start
 |---------|-------------|
 | `/admin` | 📊 Admin dashboard |
 | **Products** | |
-| `/listproduct` | List all products |
-| `/addproduct catID \| name \| price` | Add new product |
-| `/editprice ID price` | Edit price |
-| `/editname ID name` | Edit name |
-| `/toggleproduct ID` | Enable/disable product |
-| `/deleteproduct ID` | Delete product |
+| `/listproduct` | List all products (real stock, sheet stock, reserved) |
+| `/addproduct catID \| name \| price` | Add product |
 | `/addcategory name \| emoji` | Add category |
-| **Inventory** | |
-| `/addstock ID` | Add accounts to stock |
-| `/viewstock ID` | View product stock |
-| `/clearstock ID` | Clear unsold stock |
-| **Orders** | |
-| `/confirm orderID` | ✅ Confirm & deliver |
-| `/pending` | View pending orders |
-| `/cancelorder orderID` | Cancel order |
+| `/editprice ID price` · `/editname ID name` | Edit price / name |
+| `/setcategory ID catID` | Change category |
+| `/setpromo ID X Y` | Buy X get Y free (`0 0` to disable) |
+| `/setnote ID text` | Instructions sent with delivery (`-` = none, `default` = default) |
+| `/toggleproduct ID` | Enable/disable product |
+| `/deleteproduct ID` · `/restoreproduct ID` | Soft delete / restore (order history kept) |
+| **Stock** | |
+| `/addstock ID` | Add accounts by message or `.txt` file, duplicates skipped |
+| `/viewstock ID` | View stock |
+| `/clearstock ID` | Clear unsold stock (with confirmation) |
+| `/tracuu keyword` | Find who bought an account, find order by ID / payment code |
+| **Orders & money** | |
+| `/pending` | Orders awaiting payment |
+| `/awaiting` | Paid orders awaiting manual delivery |
+| `/confirm ID` | ✅ Confirm & deliver |
+| `/cancelorder ID` | Cancel order (auto refund to balance if paid) |
 | `/orders` | Recent orders |
-| **Other** | |
-| `/stats` | Detailed statistics |
+| `/warranty` | Open warranty claims |
+| `/addbalance userID amount [note]` | Add/subtract customer balance |
+| **Promotions** | |
+| `/addcoupon CODE \| 10% \| uses \| min order \| days` | Create coupon |
+| `/coupons` · `/delcoupon CODE` | List / disable coupons |
+| **Settings** | |
+| `/setbank` | View/edit bank 1 & 2 at runtime |
+| `/setshop name \| @telegram \| zalo \| tagline` | Shop info & contacts |
+| `/setwelcome` | Compose the welcome (banner, animated emoji) |
+| `/seticon cat\|sp ID` | Icon for category / product buttons |
+| `/sync` | Sync Google Sheet now |
+| **Reports** | |
+| `/stats` | Revenue today / 7 / 30 days, top products |
+| `/export [days]` | Export orders as CSV (Excel-friendly) |
 | `/users` | User list |
-| `/broadcast` | Message all users |
-| `/sync` | Sync from Google Sheet |
-| `/setbank` | View bank info |
-| `/setshop` | View/edit shop info |
+| `/backup` | Back up the database now |
+| `/broadcast [text]` | Broadcast (text, photo, video...) with preview |
 
 </details>
 
@@ -165,14 +196,14 @@ npm start
 # Step 1: Send command with product ID
 /addstock 1
 
-# Step 2: Send account list (one per line)
+# Step 2: Send account list (one per line) — or upload a .txt file
 email1@example.com|password1|extra_info1
 email2@example.com|password2|extra_info2
 ```
 
-## 📊 Google Sheet Sync (optional)
+Stock is **reserved for pending orders**, so the bot never oversells. When stock drops below `LOW_STOCK_THRESHOLD`, admins are notified.
 
-Auto-sync your product catalog from Google Sheets:
+## 📊 Google Sheet Sync (optional)
 
 | Column | Content |
 |--------|---------|
@@ -182,21 +213,41 @@ Auto-sync your product catalog from Google Sheets:
 | D | Unit |
 | E | Stock quantity |
 | F | In stock (TRUE/FALSE) |
-| G | Contact URL (Zalo, etc.) |
-| H | Notes / Promotions |
+| G | Contact link (Zalo...) |
+| H | Notes / Promotion |
+| I | Category (optional, created if missing) |
 
 **Setup:**
-1. In Google Sheets: **File → Share → Publish to web → Publish**
-2. Copy Sheet ID from URL: `docs.google.com/spreadsheets/d/[SHEET_ID]/edit`
+1. **Share → "Anyone with the link can view"**
+2. Copy the Sheet ID from the URL: `docs.google.com/spreadsheets/d/[SHEET_ID]/edit`
 3. Add to `.env`:
 ```env
 GOOGLE_SHEET_ID=your_sheet_id
 SHEET_SYNC_INTERVAL=5
 ```
 
+Products removed from the sheet are deactivated. An empty or broken sheet is skipped instead of disabling everything.
+
+## 🎨 Look & Branding
+
+- **Buttons colored by availability:** 🟢 in stock · 🔵 contact · 🔴 sold out, so customers see at a glance what they can buy.
+- **Shop on the first screen:** `/start` shows the welcome together with the category grid. It uses 2 or 3 columns depending on name length, so labels are not cut off.
+- **`/setwelcome`:** compose the welcome right in Telegram (banner photo, animated emoji, bold, links). `{name}` becomes the customer's name, `{shop}` the shop name.
+- **`/seticon cat ID`:** send one custom (animated) emoji, e.g. a ChatGPT or Canva logo, to use as the category button icon. The bot test-sends it before saving.
+- **`/setshop name | @telegram | zalo | tagline`:** contact info shown in the welcome, with buttons that open Zalo/Telegram.
+
+**Ready-made AI catalog & logos:**
+
+```bash
+node scripts/seed-ai-catalog.js      # import 20 AI software categories (safe to re-run)
+node scripts/create-logo-emoji.js    # build a logo emoji pack from assets/logos/ and attach it to buttons
+```
+
+> Custom emoji in messages and on buttons only work if **the bot owner's account has Telegram Premium** (a Telegram rule). Colored buttons work for every bot.
+
 ## 🏦 Multi-Bank Support
 
-Add a second bank in `.env` to let customers choose:
+Add a second bank in `.env`, or use `/setbank 2 BIN | ACCOUNT | NAME | BANK` at runtime:
 
 ```env
 BANK2_BIN=970436
@@ -205,50 +256,44 @@ BANK2_ACCOUNT_NAME=NGUYEN VAN A
 BANK2_NAME=VCB
 ```
 
+## 🧪 Testing
+
+```bash
+npm run check        # ESLint + full test suite (node:test)
+```
+
 ## 🛠 Tech Stack
 
-| Technology | Purpose |
-|-----------|---------|
+| Technology | Description |
+|------------|-------------|
 | [Node.js](https://nodejs.org/) | JavaScript runtime |
 | [Telegraf v4](https://github.com/telegraf/telegraf) | Telegram Bot Framework |
-| [better-sqlite3](https://github.com/WiseLibs/better-sqlite3) | SQLite database |
-| [VietQR API](https://vietqr.io/) | QR payment code generation |
-| [nanoid](https://github.com/ai/nanoid) | Unique payment code generator |
+| [better-sqlite3](https://github.com/WiseLibs/better-sqlite3) | SQLite database (WAL, transactions) |
+| [Express](https://expressjs.com/) | SePay / Telegram webhooks |
+| [VietQR API](https://vietqr.io/) | Payment QR generation |
+| [nanoid](https://github.com/ai/nanoid) | Unique payment codes |
 
 ## 📁 Project Structure
 
 ```
 telegram-shop-bot/
-├── .env.example          # Config template (copy → .env)
-├── package.json          # Dependencies
-├── LICENSE               # MIT License
-├── data/                 # SQLite database (auto-created)
+├── .env.example            # Config template (copy → .env)
+├── Dockerfile · docker-compose.yml · ecosystem.config.js
+├── data/                   # SQLite database + backups (auto-created)
+├── test/                   # Tests (node:test)
 └── src/
-    ├── bot.js            # 🚀 Entry point
-    ├── config.js         # ⚙️ Environment config loader
-    ├── database.js       # 💾 Schema & seed data
-    ├── commands/          # 📋 User commands
-    │   ├── start.js
-    │   ├── menu.js
-    │   ├── product.js
-    │   ├── nap.js
-    │   ├── checkpay.js
-    │   ├── support.js
-    │   └── myid.js
-    ├── handlers/          # ⚡ Callbacks & admin handlers
-    │   ├── adminActions.js
-    │   ├── paymentConfirm.js
-    │   ├── productSelect.js
-    │   └── quantitySelect.js
-    ├── services/          # 🔧 Business logic
-    │   ├── orderService.js
-    │   ├── paymentService.js
-    │   ├── productService.js
-    │   ├── sheetSync.js
-    │   └── userService.js
-    └── utils/             # 🎨 Keyboards & message templates
-        ├── keyboard.js
-        └── messages.js
+    ├── bot.js              # 🚀 Entry point: polling/webhook, starts jobs
+    ├── app.js              # Registers middlewares & handlers
+    ├── config.js           # ⚙️ Config + validation
+    ├── database.js         # 💾 Schema, migrations, indexes
+    ├── server.js           # 🌐 /health, SePay & Telegram webhooks
+    ├── jobs.js             # ⏰ Order expiry, daily report, backup
+    ├── middlewares.js      # Anti-spam, user tracking
+    ├── commands/           # 📋 Customer commands: start, product, orders, nap
+    ├── handlers/           # ⚡ productSelect, checkout, warranty, stateRouter
+    │   └── admin/          # 🔧 panel, products, stock, orders, coupons, settings, reports, broadcast
+    ├── services/           # 🔧 Business logic (order, payment, delivery, topup, coupon, ...)
+    └── utils/              # 🎨 messages, keyboard, format, csv, reply
 ```
 
 ## 📞 Contact & Support

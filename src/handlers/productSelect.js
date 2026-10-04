@@ -1,54 +1,44 @@
 const productService = require('../services/productService');
+const stateRouter = require('./stateRouter');
 const messages = require('../utils/messages');
-const { quantityKeyboard } = require('../utils/keyboard');
-const config = require('../config');
-const { Markup } = require('telegraf');
+const { quantityKeyboard, contactKeyboard } = require('../utils/keyboard');
+const { respond } = require('../utils/reply');
+const { showCheckout, computeMaxQty } = require('./checkout');
 
 module.exports = (bot) => {
-    // Handle product selection
-    bot.action(/^product_(\d+)$/, (ctx) => {
-        const productId = parseInt(ctx.match[1]);
-        const product = productService.getById(productId);
-
-        if (!product) {
-            return ctx.answerCbQuery('❌ Sản phẩm không tồn tại');
+    bot.action(/^product_(\d+)$/, async (ctx) => {
+        const product = productService.getById(parseInt(ctx.match[1], 10));
+        if (!product || !product.is_active || product.is_deleted) {
+            return ctx.answerCbQuery('Sản phẩm không tồn tại hoặc đã ngừng bán', { show_alert: true });
         }
 
-        ctx.answerCbQuery();
-
-        // Contact-only products → show contact info + Zalo link
         if (product.contact_only) {
-            const buttons = [];
-
-            // Button 1: Liên hệ mua qua Telegram admin
-            const adminUsername = config.SUPPORT_CONTACT.replace('@', '');
-            buttons.push([Markup.button.url('💬 Liên hệ mua', `https://t.me/${adminUsername}`)]);
-
-            // Button 2: Tham gia nhóm Zalo (from sheet contact_url)
-            if (product.contact_url) {
-                buttons.push([Markup.button.url('📱 Hotline Zalo 24/7', product.contact_url)]);
-            }
-
-            // Back to product list
-            buttons.push([Markup.button.callback('↩️ Quay lại', 'refresh_products')]);
-
-            return ctx.replyWithHTML(
-                messages.contactOnly(product),
-                Markup.inlineKeyboard(buttons)
-            );
+            await ctx.answerCbQuery();
+            return respond(ctx, messages.contactOnly(product), contactKeyboard(product));
         }
 
-        // Check stock (use display_stock which falls back to sheet_stock)
-        const availableStock = product.display_stock || product.stock_count;
-        if (availableStock === 0) {
-            return ctx.reply(messages.noStock);
-        }
+        const maxQty = computeMaxQty(product);
+        if (maxQty === 0) return ctx.answerCbQuery(messages.noStock, { show_alert: true });
 
-        // Show quantity selector
-        const maxQty = Math.min(availableStock, 10);
-        ctx.replyWithHTML(
-            messages.selectQuantity(product),
-            quantityKeyboard(productId, maxQty)
-        );
+        await ctx.answerCbQuery();
+        return respond(ctx, messages.selectQuantity(product), quantityKeyboard(product.id, maxQty));
+    });
+
+    // Custom quantity input (for quantities above the quick buttons)
+    bot.action(/^qtyc_(\d+)$/, async (ctx) => {
+        const product = productService.getById(parseInt(ctx.match[1], 10));
+        if (!product) return ctx.answerCbQuery('Sản phẩm không tồn tại');
+        await ctx.answerCbQuery();
+        stateRouter.setState(ctx.from.id, { action: 'custom_qty', productId: product.id });
+        return ctx.replyWithHTML(messages.askCustomQuantity(product, computeMaxQty(product)));
+    });
+
+    stateRouter.register('custom_qty', async (ctx, state) => {
+        const quantity = parseInt(ctx.message.text.trim(), 10);
+        if (!Number.isInteger(quantity) || quantity < 1) {
+            return ctx.replyWithHTML('Vui lòng gửi một <b>số nguyên dương</b>, hoặc /cancel để hủy.');
+        }
+        stateRouter.clearState(ctx.from.id);
+        return showCheckout(ctx, state.productId, quantity);
     });
 };

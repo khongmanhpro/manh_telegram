@@ -1,0 +1,23 @@
+// AI software catalog (display order = shop order). `domain` is used to fetch the logo.
+module.exports = [
+    { name: 'CHATGPT', emoji: '🤖', domain: 'chatgpt.com', aliases: ['chatgpt'] },
+    { name: 'GEMINI AI', emoji: '✨', domain: 'gemini.google.com' },
+    { name: 'GROK SUPER', emoji: '🌀', domain: 'grok.com' },
+    { name: 'KLING', emoji: '🎞', domain: 'klingai.com' },
+    { name: 'CAPCUT PRO', emoji: '🎬', domain: 'capcut.com', aliases: ['capcut'] },
+    { name: 'HIGGSFIELD', emoji: '🎥', domain: 'higgsfield.ai' },
+    { name: 'OpenArt AI', emoji: '🖼', domain: 'openart.ai' },
+    { name: 'ElevenLabs', emoji: '🎙', domain: 'elevenlabs.io' },
+    { name: 'CANVA', emoji: '🎨', domain: 'canva.com' },
+    { name: 'CLAUDE AI', emoji: '🧠', domain: 'claude.ai' },
+    { name: 'GAMMA AI', emoji: '📊', domain: 'gamma.app' },
+    { name: 'Cursor AI', emoji: '💻', domain: 'cursor.com' },
+    { name: 'GMAIL', emoji: '📧', domain: 'mail.google.com' },
+    { name: 'TIKTOK', emoji: '🎵', domain: 'tiktok.com' },
+    { name: 'Veo3 Ultra', emoji: '📹', domain: 'deepmind.google' },
+    { name: 'KEY GPM LOGIN', emoji: '🔑', domain: 'gpmloginapp.com' },
+    { name: 'Meitu', emoji: '📸', domain: 'meitu.com' },
+    { name: 'Wink', emoji: '😉', domain: 'wink.ai' },
+    { name: 'Akool', emoji: '🎭', domain: 'akool.com' },
+    { name: 'POLLO AI', emoji: '🐣', domain: 'pollo.ai' },
+];

@@ -1,43 +1,66 @@
 const db = require('../database');
+const wallet = require('./walletService');
+
+const stmts = {
+    upsert: db.prepare(`
+        INSERT INTO users (telegram_id, username, full_name) VALUES (?, ?, ?)
+        ON CONFLICT(telegram_id) DO UPDATE SET
+            username = excluded.username,
+            full_name = excluded.full_name,
+            is_blocked = 0
+    `),
+    get: db.prepare('SELECT * FROM users WHERE telegram_id = ?'),
+    addBalance: db.prepare('UPDATE users SET balance = balance + ? WHERE telegram_id = ?'),
+    deduct: db.prepare('UPDATE users SET balance = balance - ? WHERE telegram_id = ? AND balance >= ?'),
+    setBlocked: db.prepare('UPDATE users SET is_blocked = ? WHERE telegram_id = ?'),
+    activeIds: db.prepare('SELECT telegram_id FROM users WHERE is_blocked = 0'),
+    recent: db.prepare('SELECT * FROM users ORDER BY created_at DESC LIMIT ?'),
+};
 
 const userService = {
     /**
-     * Find or create user
+     * Create the user or refresh their name; also clears the blocked flag
      */
     findOrCreate(telegramUser) {
-        const existing = db.prepare('SELECT * FROM users WHERE telegram_id = ?').get(telegramUser.id);
-        if (existing) return existing;
-
         const fullName = [telegramUser.first_name, telegramUser.last_name].filter(Boolean).join(' ');
-        db.prepare(
-            'INSERT INTO users (telegram_id, username, full_name) VALUES (?, ?, ?)'
-        ).run(telegramUser.id, telegramUser.username || null, fullName);
-
-        return db.prepare('SELECT * FROM users WHERE telegram_id = ?').get(telegramUser.id);
+        stmts.upsert.run(telegramUser.id, telegramUser.username || null, fullName);
+        return stmts.get.get(telegramUser.id);
     },
 
-    /**
-     * Get user by telegram ID
-     */
     get(telegramId) {
-        return db.prepare('SELECT * FROM users WHERE telegram_id = ?').get(telegramId);
+        return stmts.get.get(telegramId);
     },
 
     /**
-     * Update balance
+     * Add (or subtract with a negative amount) balance. Returns false if user not found.
      */
-    addBalance(telegramId, amount) {
-        db.prepare('UPDATE users SET balance = balance + ? WHERE telegram_id = ?').run(amount, telegramId);
+    addBalance(telegramId, amount, context) {
+        if (!this.get(telegramId)) return false;
+        wallet.change(telegramId, amount, context);
+        return true;
     },
 
     /**
-     * Deduct balance
+     * Atomically deduct balance. Returns false if insufficient.
      */
-    deductBalance(telegramId, amount) {
+    deductBalance(telegramId, amount, context) {
+        if (!Number.isSafeInteger(amount) || amount < 0) return false;
         const user = this.get(telegramId);
         if (!user || user.balance < amount) return false;
-        db.prepare('UPDATE users SET balance = balance - ? WHERE telegram_id = ?').run(amount, telegramId);
+        wallet.change(telegramId, -amount, context);
         return true;
+    },
+
+    setBlocked(telegramId, blocked) {
+        stmts.setBlocked.run(blocked ? 1 : 0, telegramId);
+    },
+
+    getActiveIds() {
+        return stmts.activeIds.all().map((u) => u.telegram_id);
+    },
+
+    getRecent(limit = 30) {
+        return stmts.recent.all(limit);
     },
 };
 
